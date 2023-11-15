@@ -1,0 +1,186 @@
+openapi: 3.0.0
+info:
+  title: File Processing API
+  version: 5.0.0
+servers:
+  - url: http://127.0.0.1:8000/api/
+    description: Localhost dev
+paths:
+  /image:
+    post:
+      summary: Upload ORIGINAL file
+      description: If operationType is provided, then child image is created automatically and child id returned as per schema.
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [ "file" ]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                operationType:
+                  $ref: '#/components/schemas/operationType'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/originalImage"
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/uploadError"
+        '401':
+          description: Unauthorised
+  /image/{imageId}: 
+    get:
+      summary: Get image object
+      parameters:
+        - $ref: "#/components/parameters/imageId"
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/originalImage"
+        '404':
+          description: Not Found
+        '401':
+          description: Unauthorised
+        '403':
+          description: No access
+  /image/{imageId}/status: 
+    get:
+      summary: Get image status
+      parameters:
+        - $ref: "#/components/parameters/imageId"
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                      $ref: "#/components/schemas/imageId"
+        '404':
+          description: Not Found
+        '401':
+          description: Unauthorised
+        '403':
+          description: No access
+  /image/{imageId}/download/:
+    get:
+      summary: Download any image file
+      parameters:
+        - $ref: "#/components/parameters/imageId"
+      responses:
+        '200':
+          description: OK
+          content:
+            image/jpeg: {}
+            image/png: {}
+        '404':
+          description: Not Found
+        '401':
+          description: Unauthorised
+        '403':
+          description: No access
+  /image/{imageId}/children: 
+    post:
+      summary: Create child (derivative image) by imageId
+      description: Same type of operation called on a single image could restart operation
+      parameters:
+        - $ref: "#/components/parameters/imageId"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/childImage'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  imageId:
+                    $ref: "#/components/schemas/imageId"
+        '404':
+          description: Not Found
+        '401':
+          description: Unauthorised
+        '403':
+          description: No access
+components:
+  parameters:
+    imageId:
+      in: path
+      name: imageId
+      required: true
+      schema:
+        $ref: "#/components/schemas/imageId"
+  schemas:
+    status:
+      type: string
+      enum: [ "ready", "processing", "error" ]
+    type:
+      type: string
+      enum: [ "original", "bgRemoval", "doubleResolution" ]
+    imageId:
+      type: string
+      format: uuid
+    childImage:
+      type: object
+      properties:
+        type:
+          type: string
+          enum: [ "bgRemoval", "doubleResolution" ]
+        status:
+          $ref: "#/components/schemas/status"
+        imageId:
+          $ref: "#/components/schemas/imageId"
+        createdAt:
+          type: string
+          format: date-time
+    children:
+      description: "Images made from processing parent image"
+      type: array
+      items: 
+        $ref: "#/components/schemas/childImage"
+    originalImage:
+      type: object
+      properties:
+        type:
+          type: string
+          enum: [ "original" ]
+        status:
+          $ref: "#/components/schemas/status"
+        imageId:
+          $ref: "#/components/schemas/imageId"
+        children:
+          $ref: "#/components/schemas/children"
+        createdAt:
+          type: string
+          format: date-time
+    operationType:
+      type: string
+      enum: [ "bgRemoval", "doubleResolution" ]
+    uploadError:
+      type: object
+      properties:
+        error:
+          type: string
+          description: Error details, if available
+        errorType:
+          type: string
+          enum: ["imageTooLarge", "unsupportedFormat"]
+    
