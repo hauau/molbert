@@ -5,6 +5,8 @@ info:
 servers:
   - url: http://127.0.0.1:8000/api/
     description: Localhost dev
+  - url: http://127.0.0.1:8000/
+    description: Localhost dev - no prefix
 paths:
   /image:
     post:
@@ -69,7 +71,7 @@ paths:
                 type: object
                 properties:
                   status:
-                      $ref: "#/components/schemas/imageId"
+                      $ref: "#/components/schemas/status"
         '404':
           description: Not Found
         '401':
@@ -103,7 +105,11 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/childImage'
+              type: object
+              properties:
+                operationType:
+                  type: string
+                  enum: [ "bgRemoval", "doubleResolution" ]
       responses:
         '200':
           description: OK
@@ -121,6 +127,12 @@ paths:
         '403':
           description: No access
 components:
+  securitySchemes:
+      ApiKey:
+         type: apiKey
+         name: X-User-Id
+         in: header
+         description: Auth proxy passes user ID here
   parameters:
     imageId:
       in: path
@@ -183,4 +195,5 @@ components:
         errorType:
           type: string
           enum: ["imageTooLarge", "unsupportedFormat"]
-    
+security:
+   - ApiKey: []
