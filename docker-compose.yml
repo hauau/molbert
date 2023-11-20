@@ -10,17 +10,46 @@ services:
       POSTGRES_USER: app
       POSTGRES_PASSWORD: 123123123
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
 
-  web:
-    image: molbert:latest
-    command: uvicorn app.mock:app --host 0.0.0.0 --port 8000 --reload
+  # molbert:
+  #   image: molbert:latest
+  #   command: uvicorn app.mock:app --host 0.0.0.0 --port 8000 --reload
+  #   ports:
+  #     - "8000:8000"
+  #   environment:
+  #     - DATABASE_URL=postgresql://app:123123123@db/app
+  #   depends_on:
+  #     - db
+
+  # S3 server
+  minio:
+    # <<: *default-logging
+    image: minio/minio:RELEASE.2023-11-11T08-14-41Z
     ports:
-      - "8000:8000"
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"
+    volumes:
+      - ./minio:/data
     environment:
-      - DATABASE_URL=postgresql://app:123123123@db/app
+      MINIO_SERVER_ACCESS_KEY: minioadmin
+      MINIO_SERVER_SECRET_KEY: minioadmin
+    command: server --console-address ":9001" --address ":9000" /data
+
+  # Script to init s3 bucket
+  createbuckets:
+    # <<: *default-logging
+    image: minio/mc:RELEASE.2023-11-15T22-45-58Z
+    restart: "no"
     depends_on:
-      - db
+      - minio
+    entrypoint: >
+      /bin/sh -c "
+      /usr/bin/mc alias set molbert http://minio:9000 minioadmin minioadmin;
+      /usr/bin/mc mb molbert/molbert;
+      /usr/bin/mc policy set public molbert/molbert;
+      exit 0;
+      "
 
 volumes:
   postgres_data:

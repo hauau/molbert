@@ -1,12 +1,14 @@
 openapi: 3.0.0
 info:
   title: File Processing API
-  version: 5.0.0
+  version: 6.0.0
 servers:
-  - url: http://127.0.0.1:8000/api/
+  - url: http://127.0.0.1:8000/api
     description: Localhost dev
   - url: http://127.0.0.1:8000/
     description: Localhost dev - no prefix
+  - url: https://f172bd63dde84e0f85d0fd46f542a62f.apig.ru-moscow-1.hc.sbercloud.ru/api
+    description: Sbercloud API
 paths:
   /image:
     post:
@@ -24,6 +26,8 @@ paths:
                   format: binary
                 operationType:
                   $ref: '#/components/schemas/operationType'
+                modelType:
+                  $ref: '#/components/schemas/modelType'
       responses:
         '201':
           description: Created
@@ -110,6 +114,8 @@ paths:
                 operationType:
                   type: string
                   enum: [ "bgRemoval", "doubleResolution" ]
+                modelType:
+                  $ref: "#/components/schemas/modelType"
       responses:
         '200':
           description: OK
@@ -156,6 +162,8 @@ components:
         type:
           type: string
           enum: [ "bgRemoval", "doubleResolution" ]
+        modelType:
+          $ref: "#/components/schemas/modelType"
         status:
           $ref: "#/components/schemas/status"
         imageId:
@@ -186,6 +194,11 @@ components:
     operationType:
       type: string
       enum: [ "bgRemoval", "doubleResolution" ]
+    modelType:
+      type: string
+      description: 'Specify model for an operation. Internal used by default. 24ai available only for background removal'
+      enum: [ "internal", "24ai" ]
+      default: "internal"
     uploadError:
       type: object
       properties:
