@@ -1,17 +1,19 @@
 import uuid
-from fastapi import APIRouter, Depends, File, UploadFile, Form, HTTPException, BackgroundTasks, Request
+from fastapi import APIRouter, Depends, File, UploadFile, Form, HTTPException, BackgroundTasks, Request, Response
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from typing import List
 from ... import schemas
 from ... import models
-from ...tasks.upload import upload_file_to_s3
+from ...tasks.upload import upload_original, get_image_content
 from ...database import SessionLocal
 from typing import Optional
 from datetime import datetime
-import aioboto3
 from fastapi import UploadFile
+from uuid import UUID
+import boto3
+from ...models import Image
 import math
-
 
 router = APIRouter()
 
@@ -33,8 +35,11 @@ async def create_image(
     operationType: Optional[schemas.OperationType] = Form(None),
 ):
     extension = 'jpg' if file.content_type == 'image/jpeg' else 'png'
-    size = math.ceil(int(request.headers.get('content-length'))/1024)
+    size = int(request.headers.get('content-length'))
     # 1. Validate that file size is less than 12MB
+    if size > 12_000_000:
+      raise HTTPException(status_code=400, detail="File size exceeds limit of 12MB")
+
     # 2. Insert new record to the Image db and get UUID image_id in return
     new_image = models.Image(
         type=operationType if operationType else "original",
@@ -50,7 +55,7 @@ async def create_image(
     db.refresh(new_image)
 
     # 3. Start image uploading background task without blocking
-    background_tasks.add_task(upload_file_to_s3, file, new_image.image_id, extension)
+    background_tasks.add_task(upload_original, file, new_image.image_id, extension, db)
 
     # 4. Respond with imageId: uuid
     return {
@@ -60,13 +65,31 @@ async def create_image(
         "createdAt": new_image.created_at
     }
 
+@router.get("/image/{imageId}/download")
+async def get_image_contents(imageId: UUID, response: Response, db: Session = Depends(get_db)):
+    # TODO: User filtering
+    image = db.query(Image).filter(Image.image_id == imageId, Image.status == 'ready').first()
+    db.commit()
+    if image is None:
+      raise HTTPException(status_code=404, detail="Not found")
+    
+    extension = 'jpg' if image.mime_type == 'image/jpeg' else 'png'
+    
+    return get_image_content(image.image_id, extension, image.mime_type)
 
-@router.get("/image", response_model=List[schemas.Image])
-async def list_images():
-    # Mock response for listing images
-    return [{
-        "type": "original",
-        "status": "processing",
-        "imageId": uuid.uuid4(),
-        "createdAt": datetime.now()
-    }]
+@router.get("/image/{imageId}", response_model=schemas.Image)
+async def get_image_object(imageId: UUID, db: Session = Depends(get_db)):
+    # TODO: User filtering
+    q_res = db.query(models.Image).filter(models.Image.image_id == imageId).first()
+    return q_res
+
+@router.get("/image/{imageId}/status")
+async def get_image_status(imageId: UUID, db: Session = Depends(get_db)):
+    q_res = db.query(models.Image).filter(models.Image.image_id == imageId).first()
+    return {"status":q_res.status}
+
+@router.get("/image", response_model=schemas.Image)
+async def list_images(imageId: UUID, db: Session = Depends(get_db)):
+    # TODO: User filtering
+    q_res = db.query(models.Image).filter(models.Image.image_id == imageId).first()
+    return q_res

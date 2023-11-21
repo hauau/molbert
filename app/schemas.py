@@ -19,8 +19,8 @@ class ModelType(str, Enum):
     ai24 = "24ai"
 
 class Image(ImageBase):
-    imageId: UUID4
-    createdAt: datetime
+    image_id: UUID4
+    created_at: datetime
     size_bytes: Optional[int]
     mime_type: Optional[str]
     from_image_id: Optional[UUID4]
