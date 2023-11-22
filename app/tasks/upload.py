@@ -22,8 +22,6 @@ session = aioboto3.Session(
     region_name=AWS_REGION,
 )
 
-s3client = session.client("s3", endpoint_url="http://127.0.0.1:9000")
-
 async def upload_file_to_s3(
     file: UploadFile,
     filename: str,

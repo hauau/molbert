@@ -21,6 +21,7 @@ class ModelType(str, Enum):
 class Image(ImageBase):
     image_id: UUID4
     created_at: datetime
+    model_type: Optional[ModelType]
     size_bytes: Optional[int]
     mime_type: Optional[str]
     from_image_id: Optional[UUID4]

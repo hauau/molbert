@@ -1,7 +1,7 @@
 import uuid
-from fastapi import APIRouter, Depends, File, UploadFile, Form, HTTPException, BackgroundTasks, Request, Response
+from fastapi import APIRouter, Depends, File, UploadFile, Form, HTTPException, BackgroundTasks, Request, Header
 from fastapi.responses import StreamingResponse
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from typing import List
 from ... import schemas
 from ... import models
@@ -25,14 +25,20 @@ def get_db():
     finally:
         db.close()
 
+def get_user_id(x_user_id: str = Header(None)):
+    if x_user_id is None:
+        raise HTTPException(status_code=401, detail="X-User-Id header missing")
+    return x_user_id
 
 @router.post("/image", response_model=dict)
 async def create_image(
     request: Request,
     background_tasks: BackgroundTasks,
+    user_id: str = Depends(get_user_id),
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
     operationType: Optional[schemas.OperationType] = Form(None),
+    modelType: Optional[schemas.ModelType] = Form(default=schemas.ModelType.internal)
 ):
     extension = 'jpg' if file.content_type == 'image/jpeg' else 'png'
     size = int(request.headers.get('content-length'))
@@ -43,7 +49,7 @@ async def create_image(
     # 2. Insert new record to the Image db and get UUID image_id in return
     new_image = models.Image(
         type=operationType if operationType else "original",
-        user_id="test",
+        user_id=user_id,
         created_at=datetime.now(),
         size_bytes=size,
         mime_type=file.content_type,
@@ -54,6 +60,27 @@ async def create_image(
     db.commit()
     db.refresh(new_image)
 
+    children = []
+
+    if operationType is not None:
+      transform_image = models.Image(
+        type=operationType,
+        user_id=user_id,
+        created_at=datetime.now(),
+        from_image_id=new_image.image_id,
+        status="processing"  # assuming initial status is 'processing'
+      )
+      db.add(transform_image)
+      db.commit()
+      db.refresh(transform_image)
+      children.append({
+        "type": operationType,
+        "status": "processing",
+        "modelType": modelType,
+        "imageId": transform_image.image_id,
+        "createdAt": transform_image.created_at
+      })
+
     # 3. Start image uploading background task without blocking
     background_tasks.add_task(upload_original, file, new_image.image_id, extension, db)
 
@@ -61,15 +88,19 @@ async def create_image(
     return {
         "type": "original",
         "status": "processing",
+        "children": children,
         "imageId": new_image.image_id,
         "createdAt": new_image.created_at
     }
 
 @router.get("/image/{imageId}/download")
-async def get_image_contents(imageId: UUID, response: Response, db: Session = Depends(get_db)):
-    # TODO: User filtering
-    image = db.query(Image).filter(Image.image_id == imageId, Image.status == 'ready').first()
+async def get_image_contents(imageId: UUID, db: Session = Depends(get_db), user_id: str = Depends(get_user_id)):
+    image = db.query(Image).filter(
+        Image.image_id == imageId,
+        Image.status == 'ready',
+        Image.user_id == user_id).first()
     db.commit()
+
     if image is None:
       raise HTTPException(status_code=404, detail="Not found")
     
@@ -77,19 +108,26 @@ async def get_image_contents(imageId: UUID, response: Response, db: Session = De
     
     return get_image_content(image.image_id, extension, image.mime_type)
 
+@router.get("/image")
+async def list_images(db: Session = Depends(get_db), user_id: str = Depends(get_user_id)):
+    image = db.query(models.Image).filter(models.Image.user_id == user_id).all()
+    return image
+
 @router.get("/image/{imageId}", response_model=schemas.Image)
 async def get_image_object(imageId: UUID, db: Session = Depends(get_db)):
     # TODO: User filtering
-    q_res = db.query(models.Image).filter(models.Image.image_id == imageId).first()
-    return q_res
+    image = db.query(models.Image).filter(models.Image.image_id == imageId).first()
+
+    if image is None:
+      raise HTTPException(status_code=404, detail="Not found")
+
+    return image
 
 @router.get("/image/{imageId}/status")
-async def get_image_status(imageId: UUID, db: Session = Depends(get_db)):
-    q_res = db.query(models.Image).filter(models.Image.image_id == imageId).first()
-    return {"status":q_res.status}
+async def get_image_status(imageId: UUID, db: Session = Depends(get_db), user_id: str = Depends(get_user_id)):
+    image = db.query(models.Image).filter(models.Image.image_id == imageId, models.Image.user_id == user_id).first()
 
-@router.get("/image", response_model=schemas.Image)
-async def list_images(imageId: UUID, db: Session = Depends(get_db)):
-    # TODO: User filtering
-    q_res = db.query(models.Image).filter(models.Image.image_id == imageId).first()
-    return q_res
+    if image is None:
+      raise HTTPException(status_code=404, detail="Not found")
+
+    return {"status":image.status}

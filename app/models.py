@@ -1,6 +1,5 @@
 from sqlalchemy import Column, String, Enum, ForeignKey, DateTime, Integer
 from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import relationship
 from .database import Base
 import uuid
 
@@ -16,5 +15,3 @@ class Image(Base):
     user_id = Column(String)
     from_image_id = Column(UUID(as_uuid=True), ForeignKey('image.image_id'))
     status = Column(Enum('processing', 'ready', 'error', name='image_status'))
-
-    parent = relationship("Image", remote_side=[image_id])
