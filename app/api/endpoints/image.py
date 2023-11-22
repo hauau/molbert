@@ -1,19 +1,16 @@
-import uuid
 from fastapi import APIRouter, Depends, File, UploadFile, Form, HTTPException, BackgroundTasks, Request, Header
-from fastapi.responses import StreamingResponse
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session
 from typing import List
 from ... import schemas
 from ... import models
 from ...tasks.upload import upload_original, get_image_content
+from ...tasks.transform import remove_background_native
 from ...database import SessionLocal
 from typing import Optional
 from datetime import datetime
 from fastapi import UploadFile
 from uuid import UUID
-import boto3
 from ...models import Image
-import math
 
 router = APIRouter()
 
@@ -60,13 +57,14 @@ async def create_image(
     db.commit()
     db.refresh(new_image)
 
-    children = []
+    children: List = []
 
     if operationType is not None:
       transform_image = models.Image(
         type=operationType,
         user_id=user_id,
         created_at=datetime.now(),
+        mime_type=file.content_type,
         from_image_id=new_image.image_id,
         status="processing"  # assuming initial status is 'processing'
       )
@@ -84,7 +82,11 @@ async def create_image(
     # 3. Start image uploading background task without blocking
     background_tasks.add_task(upload_original, file, new_image.image_id, extension, db)
 
-    # 4. Respond with imageId: uuid
+    # 4. Set a task for processing if required
+    for child in children:
+       print(child)
+       background_tasks.add_task(remove_background_native, new_image.image_id, extension, child["imageId"])       
+
     return {
         "type": "original",
         "status": "processing",
@@ -94,7 +96,7 @@ async def create_image(
     }
 
 @router.get("/image/{imageId}/download")
-async def get_image_contents(imageId: UUID, db: Session = Depends(get_db), user_id: str = Depends(get_user_id)):
+async def download_image(imageId: UUID, db: Session = Depends(get_db), user_id: str = Depends(get_user_id)):
     image = db.query(Image).filter(
         Image.image_id == imageId,
         Image.status == 'ready',

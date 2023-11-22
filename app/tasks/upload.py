@@ -7,6 +7,7 @@ from datetime import datetime
 from fastapi.responses import StreamingResponse
 import boto3
 from os import getenv
+from tempfile import SpooledTemporaryFile
 
 # AWS S3 Configuration
 AWS_ACCESS_KEY_ID = getenv("AWS_ACCESS_KEY_ID", "minioadmin")
@@ -23,7 +24,7 @@ session = aioboto3.Session(
 )
 
 async def upload_file_to_s3(
-    file: UploadFile,
+    file,
     filename: str,
     extension: str
 ) -> str:
@@ -32,7 +33,7 @@ async def upload_file_to_s3(
     async with session.client("s3", endpoint_url=S3_ENDPOINT_URL) as s3:
         try:
             print(f"Uploading {blob_s3_key} to s3")
-            await s3.upload_fileobj(file.file, S3_BUCKET, blob_s3_key)
+            await s3.upload_fileobj(file, S3_BUCKET, blob_s3_key)
             print(f"Finished Uploading {blob_s3_key} to s3")
         except Exception as e:
             print(f"Unable to s3 upload to {blob_s3_key}: {e} ({type(e)})")
@@ -46,13 +47,46 @@ async def upload_original(
     extension: str,
     db: Session
 ) -> str:
-    await upload_file_to_s3(file, filename, extension)
+    await upload_file_to_s3(file.file, filename, extension)
     db.execute(
       update(Image)
         .where(Image.image_id == filename)
         .values({"status": "ready", "uploaded_at": datetime.now()})
     )
     db.commit()
+
+def get_image_buffer_generator_s3(uuid: str, extension: str):
+    # Initialize the S3 client
+    object_key = f"/{IMAGE_DIR}/{uuid}.{extension}"
+    print(object_key)
+
+    s3_client = boto3.client('s3',
+                            endpoint_url=S3_ENDPOINT_URL,
+                            aws_access_key_id=AWS_ACCESS_KEY_ID,
+                            aws_secret_access_key=AWS_SECRET_ACCESS_KEY,
+                            region_name=AWS_REGION)
+
+    # Get the object from S3
+    response = s3_client.get_object(Bucket=S3_BUCKET, Key=object_key)
+    
+    for chunk in response['Body'].iter_chunks(chunk_size=1024):
+      yield chunk
+
+def get_image_buffer_test(uuid: str, extension: str):
+    # Initialize the S3 client
+    object_key = f"/{IMAGE_DIR}/{uuid}.{extension}"
+    print(object_key)
+
+    s3_client = boto3.client('s3',
+                            endpoint_url=S3_ENDPOINT_URL,
+                            aws_access_key_id=AWS_ACCESS_KEY_ID,
+                            aws_secret_access_key=AWS_SECRET_ACCESS_KEY,
+                            region_name=AWS_REGION)
+
+    # Get the object from S3
+    response = s3_client.get_object(Bucket=S3_BUCKET, Key=object_key)
+    
+    return response['Body']
 
 def get_image_content(uuid: str, extension: str, media_type: str):
     # Initialize the S3 client
