@@ -6,15 +6,15 @@ from ..models import Image
 from datetime import datetime
 from fastapi.responses import StreamingResponse
 import boto3
-
+from os import getenv
 
 # AWS S3 Configuration
-AWS_ACCESS_KEY_ID = 'minioadmin'
-AWS_SECRET_ACCESS_KEY = 'minioadmin'
-AWS_REGION = 'us-east-1'
-S3_BUCKET = 'molbert'
-S3_ENDPOINT_URL = "http://127.0.0.1:9000"
-IMAGE_DIR = 'images'
+AWS_ACCESS_KEY_ID = getenv("AWS_ACCESS_KEY_ID", "minioadmin")
+AWS_SECRET_ACCESS_KEY = getenv("AWS_SECRET_ACCESS_KEY", 'minioadmin')
+AWS_REGION = getenv("AWS_REGION", 'us-east-1')
+S3_BUCKET = getenv("S3_BUCKET", 'molbert')
+S3_ENDPOINT_URL = getenv("S3_ENDPOINT_URL", "http://127.0.0.1:9000")
+IMAGE_DIR = getenv("IMAGE_DIR", 'images')
 
 session = aioboto3.Session(
     aws_access_key_id=AWS_ACCESS_KEY_ID,
@@ -56,7 +56,7 @@ async def upload_original(
 
 def get_image_content(uuid: str, extension: str, media_type: str):
     # Initialize the S3 client
-    object_key = f"/images/{uuid}.{extension}"
+    object_key = f"/{IMAGE_DIR}/{uuid}.{extension}"
     print(object_key)
 
     s3_client = boto3.client('s3',
