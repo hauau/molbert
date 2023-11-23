@@ -4,22 +4,23 @@ import requests
 import io
 import json
 import base64
-from os import getenv
-from .upload import get_image_content, get_image_buffer_test, upload_file_to_s3, get_image_buffer_generator_s3
+from .upload import get_image_content, upload_stream_to_s3, get_image_buffer_test, upload_file_to_s3, get_image_buffer_generator_s3
 from ..models import Image
 from ..schemas import OperationType
 from ..database import SessionLocal
 from sqlalchemy import update
+from ..config import internal_ml_url, internal_ml_workspace
+import time
+from tempfile import SpooledTemporaryFile
+import concurrent.futures
+import httpx
+from binascii import a2b_base64
 
-name_service = getenv("ML_NAME_SERVICE","1700559467") 
-internal_ml_url = f'https://mlspace.aicloud.sbercloud.ru/deployments/dgx2-inf-001/kfserving-{name_service}/v1/models/kfserving-{name_service}:predict'
-internal_ml_workspace = getenv("ML_WORKSPACE_ID","111111-11111-11111-11111-1111111") 
-
-def buffer_gen_2_base64(buffer_generator):
-    result = ""
-    for chunk in buffer_generator:
-        result += base64.b64encode(chunk).decode()
-    return result
+async def async_post_request(url, json_data):
+    async with httpx.AsyncClient() as client:
+        response = await client.post(url, json=json_data)
+        response.raise_for_status()
+        return response.content
 
 # model result to image contents
 # TODO: stream result
@@ -28,13 +29,6 @@ def base64_2_image(data):
     content = json.loads(data.content)
     buff = io.BytesIO(base64.b64decode(content['predictions']))
     return Image.open(buff)
-
-# Modified function to encode streamed content
-def encode_image_base64_streaming_from_buffer(buffer_generator):
-    result = ""
-    for chunk in buffer_generator:
-        result += base64.b64encode(chunk).decode()
-    return result
 
 def apply_transform(image: Image):
     if image.status == 'ready':
@@ -47,51 +41,96 @@ def apply_transform(image: Image):
         case OperationType.doubleResolution:
             print('doubleResolution ', image.image_id)
 
+async def stream_response(url, req_body, headers):
+    with requests.post(url=url, json=req_body, headers=headers, stream=True, timeout=60) as response:
+          if response.status_code > 300:
+            print(response.content)
+          response.raise_for_status()
+          for chunk in response.iter_content(chunk_size=32000):
+              yield chunk  # This will yield raw byte-like chunks of the HTTP response     
+
 async def remove_background_native(from_uuid: str, from_extension: str, to_uuid: str):
     # TODO: Chain with upload end, can't isolate completely from original
     # for now
     print("ML remove_background_native")
     await sleep(1)
     # Step 1: Download parent from S3
+    t_get_buff = time.time()
     buffer_generator = get_image_buffer_test(from_uuid, from_extension)
-    print("ML got Buffer")
+    print("ML got Buffer ", time.time() - t_get_buff)
 
     # Step 2: Encode to base64
-    base64_encoded = encode_image_base64_streaming_from_buffer(buffer_generator)
-    print("ML encoded image")
+    t_encode_b64 = time.time()
+    base64_encoded = base64.b64encode(buffer_generator.read()).decode('utf-8')
+    print("ML encoded image ", time.time() - t_encode_b64)
 
     # Step 3: POST to external service
     # TODO: Stream json body base64 part somehow
     # TODO: Add retry/backoff https://stackoverflow.com/questions/15431044/can-i-set-max-retries-for-requests-request
     # TODO: Extract for switching endpoint/optype
+    t_ml_request = time.time()
     internal_task = "background_remove"
     req_body = {"image": base64_encoded,"task":internal_task}
 
     # with open("Output.txt", "w") as text_file:
     #   text_file.write(json.dumps(req_body))
-    
-    response = requests.post(
-        url=internal_ml_url,
-        json=req_body,
-        headers={
+
+    # 3с повторный запрос - 10с
+    # 10 попыток
+
+    headers={
             "content-type": "application/json",
             "x-workspace-id": internal_ml_workspace
-        },
-        timeout=60)
-    print(response.content)
-    response.raise_for_status()
-    predictions = response.json().get("predictions", "")
-    print("ML POSTed")
-
-    # Step 4: Decode from base64
-    decoded_data = base64.b64decode(predictions)
-    # the decoded data in a BytesIO object
-    decoded_data_io = io.BytesIO(decoded_data)
-    print("ML response decoded")
+        }
+   
+    t_upload = time.time()
 
     # Step 5: Upload back to S3
-    await upload_file_to_s3(decoded_data_io, to_uuid, from_extension)
-    print("ML uploaded result")
+    temp_file = SpooledTemporaryFile()
+    req_body = {"image": base64_encoded,"task":internal_task}
+
+    random_file = open("response.jpg", "wb")
+
+    # For decoding chunks not suitable for decoding yet
+    buffer = b""
+    async with httpx.AsyncClient() as client:
+      async with client.stream("POST", url=internal_ml_url,json=req_body,headers=headers, timeout=60) as response:
+          async for chunk in response.aiter_bytes():
+            print("Original:\t", len(chunk))
+            chunk = buffer + chunk
+            # Extract  b'{"predictions":"saddsfdfd...
+            if b"predictions" in chunk:
+              chunk = chunk[16:]
+            if b"\"}" in chunk:
+              chunk = chunk[:-3]
+
+            # Calculate how much can be cleanly decoded
+            cut_off = len(chunk) % 4
+            buffer = chunk[-cut_off:] if cut_off != 0 else b""
+            chunk_to_decode = chunk[:-cut_off] if cut_off != 0 else chunk
+
+            print("For decode:\t", len(chunk_to_decode))
+
+            if chunk_to_decode:
+              try:
+                  base64.b64decode(chunk_to_decode + b'==', validate=False)
+              except:
+                  print(chunk_to_decode)
+  
+              random_file.write(base64.b64decode(chunk_to_decode + b'==', validate=False))
+              temp_file.write(base64.b64decode(chunk_to_decode + b'==', validate=False))   
+                
+
+  
+ 
+    temp_file.seek(0)
+
+    random_file.close()
+
+    await upload_stream_to_s3(temp_file, to_uuid, from_extension)
+    print("ML uploaded result ", time.time() - t_upload)
+    
+    temp_file.close()  
 
     # Step 6: Set child status
     with SessionLocal() as db:
