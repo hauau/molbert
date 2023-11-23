@@ -109,6 +109,59 @@ async def create_image(
     }
 
 
+@router.post("/image/{imageId}/children", response_model=dict)
+async def create_image(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    imageId: UUID,
+    createImage: schemas.CreateChildImage,
+    user_id: str = Depends(get_user_id),
+    db: Session = Depends(get_db),
+):
+    # TODO:
+    if createImage.modelType == schemas.ModelType.ai24:
+        raise HTTPException(
+            status_code=400, detail="Specified model is not supported yet")
+
+    image = db.query(Image).filter(
+    Image.image_id == imageId,
+    Image.user_id == user_id).one()
+    db.commit()
+
+    size = int(request.headers.get('content-length'))
+    # 1. Validate that file size is less than 12MB
+    if size > 12_000_000:
+        raise HTTPException(
+            status_code=400, detail="File size exceeds limit of 12MB")
+
+    transform_image = models.Image(
+        type=createImage.operationType,
+        user_id=user_id,
+        created_at=datetime.now(),
+        # TODO: add to db model
+        # "modelType": createImage.modelType,
+        mime_type=image.mime_type,
+        from_image_id=imageId,
+        status="processing"  # assuming initial status is 'processing'
+    )
+    db.add(transform_image)
+    db.commit()
+    db.refresh(transform_image)
+    extension = 'jpg' if image.mime_type == 'image/jpeg' else 'png'
+
+    background_tasks.add_task(create_transformed_image, imageId,
+                              extension, transform_image.image_id, createImage.operationType, createImage.modelType)
+
+    return {
+        "type": createImage.operationType,
+        "status": "processing",
+        "modelType": createImage.modelType,
+        "imageId": transform_image.image_id,
+        "fromImageId": imageId,
+        "createdAt": transform_image.created_at
+    }
+
+
 @router.get("/image/{imageId}/download")
 async def download_image(imageId: UUID, db: Session = Depends(get_db), user_id: str = Depends(get_user_id)):
     image = db.query(Image).filter(

@@ -28,3 +28,7 @@ class Image(ImageBase):
 
     class Config:
         orm_mode = True
+
+class CreateChildImage(BaseModel):
+    operationType: OperationType
+    modelType: Optional[ModelType] = ModelType.internal
