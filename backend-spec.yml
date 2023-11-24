@@ -99,7 +99,7 @@ paths:
           description: Unauthorised
         '403':
           description: No access
-  /image/{imageId}/children: 
+  /image/{imageId}/child: 
     post:
       summary: Create child (derivative image) by imageId
       description: Same type of operation called on a single image could restart operation
@@ -113,7 +113,7 @@ paths:
               properties:
                 operationType:
                   type: string
-                  enum: [ "bgRemoval", "doubleResolution" ]
+                  enum: [ "background_remove", "super_resolution" ]
                 modelType:
                   $ref: "#/components/schemas/modelType"
       responses:
@@ -152,7 +152,7 @@ components:
       enum: [ "ready", "processing", "error" ]
     type:
       type: string
-      enum: [ "original", "bgRemoval", "doubleResolution" ]
+      enum: [ "original", "background_remove", "super_resolution" ]
     imageId:
       type: string
       format: uuid
@@ -161,7 +161,7 @@ components:
       properties:
         type:
           type: string
-          enum: [ "bgRemoval", "doubleResolution" ]
+          enum: [ "background_remove", "super_resolution" ]
         modelType:
           $ref: "#/components/schemas/modelType"
         status:
@@ -193,7 +193,7 @@ components:
           format: date-time
     operationType:
       type: string
-      enum: [ "bgRemoval", "doubleResolution" ]
+      enum: [ "background_remove", "super_resolution" ]
     modelType:
       type: string
       description: 'Specify model for an operation. Internal used by default. 24ai available only for background removal'
