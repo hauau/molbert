@@ -96,7 +96,6 @@ async def create_image(
 
     # 4. Set a task for processing if required
     for child in children:
-        print(child)
         background_tasks.add_task(create_transformed_image, new_image.image_id,
                                   extension, child["imageId"], operationType, modelType)
 

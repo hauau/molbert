@@ -63,7 +63,6 @@ async def upload_original(
 def get_image_buffer_generator_s3(uuid: str, extension: str):
     # Initialize the S3 client
     object_key = f"/{IMAGE_DIR}/{uuid}.{extension}"
-    print(object_key)
 
     s3_client = boto3.client('s3',
                             endpoint_url=S3_ENDPOINT_URL,
@@ -80,7 +79,6 @@ def get_image_buffer_generator_s3(uuid: str, extension: str):
 def get_image_buffer_test(uuid: str, extension: str):
     # Initialize the S3 client
     object_key = f"/{IMAGE_DIR}/{uuid}.{extension}"
-    print(object_key)
 
     s3_client = boto3.client('s3',
                             endpoint_url=S3_ENDPOINT_URL,

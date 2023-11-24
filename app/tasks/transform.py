@@ -65,9 +65,7 @@ async def create_transformed_image(from_uuid: str, from_extension: str, to_uuid:
     buffer_generator = get_image_buffer_test(from_uuid, from_extension)
 
     # Step 2: Encode to base64
-    t_encode_b64 = time.time()
     base64_encoded = base64.b64encode(buffer_generator.read()).decode('utf-8')
-    print("Image -> base64 ", time.time() - t_encode_b64)
 
     # Step 3: POST to external service
     # TODO: Add retry/backoff https://stackoverflow.com/questions/15431044/can-i-set-max-retries-for-requests-request
