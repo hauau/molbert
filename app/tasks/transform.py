@@ -78,7 +78,7 @@ async def create_transformed_image(from_uuid: str, from_extension: str, to_uuid:
     err = ""
     match model:
         case ModelType.internal:
-            internal_task = 'background_remove' if task == OperationType.bgRemoval else 'super_resolution'
+            internal_task = 'background_remove' if task == OperationType.background_remove else 'super_resolution'
             err = await internal_ml_call(base64_encoded, internal_task, temp_file)
         case ModelType.ai24:
             raise BaseException("Not implemented")  

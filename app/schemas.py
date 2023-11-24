@@ -11,8 +11,8 @@ class ImageCreate(ImageBase):
     pass
 
 class OperationType(str, Enum):
-    bgRemoval = "bgRemoval"
-    doubleResolution = "doubleResolution"
+    background_remove = "background_remove"
+    super_resolution = "super_resolution"
 
 class ModelType(str, Enum):
     internal = "internal"
