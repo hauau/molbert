@@ -109,7 +109,7 @@ async def create_image(
     }
 
 
-@router.post("/image/{imageId}/children", response_model=dict)
+@router.post("/image/{imageId}/child", response_model=dict)
 async def create_image(
     request: Request,
     background_tasks: BackgroundTasks,
@@ -139,7 +139,7 @@ async def create_image(
         user_id=user_id,
         created_at=datetime.now(),
         # TODO: add to db model
-        # "modelType": createImage.modelType,
+        model_type=createImage.modelType,
         mime_type=image.mime_type,
         from_image_id=imageId,
         status="processing"  # assuming initial status is 'processing'
