@@ -42,11 +42,6 @@ async def create_image(
     modelType: Optional[schemas.ModelType] = Form(
         default=schemas.ModelType.internal)
 ):
-    # TODO:
-    if modelType == schemas.ModelType.ai24:
-        raise HTTPException(
-            status_code=400, detail="Specified model is not supported yet")
-
     extension = 'jpg' if file.content_type == 'image/jpeg' else 'png'
     size = int(request.headers.get('content-length'))
     # 1. Validate that file size is less than 12MB
@@ -59,6 +54,7 @@ async def create_image(
         type=operationType if operationType else "original",
         user_id=user_id,
         created_at=datetime.now(),
+        model_type=modelType,
         size_bytes=size,
         mime_type=file.content_type,
         status="processing"  # assuming initial status is 'processing'
@@ -75,6 +71,7 @@ async def create_image(
             type=operationType,
             user_id=user_id,
             created_at=datetime.now(),
+            model_type=modelType,
             mime_type=file.content_type,
             from_image_id=new_image.image_id,
             status="processing"  # assuming initial status is 'processing'
@@ -117,11 +114,6 @@ async def create_image(
     user_id: str = Depends(get_user_id),
     db: Session = Depends(get_db),
 ):
-    # TODO:
-    if createImage.modelType == schemas.ModelType.ai24:
-        raise HTTPException(
-            status_code=400, detail="Specified model is not supported yet")
-
     image = db.query(Image).filter(
     Image.image_id == imageId,
     Image.user_id == user_id).one()

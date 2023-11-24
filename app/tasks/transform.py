@@ -13,32 +13,6 @@ import time
 from tempfile import SpooledTemporaryFile
 import httpx
 
-def decode_base64_stream(b64_stream):
-    """Get a stream of decoded bytes from an iterable of base 64 bytes."""
-
-    unprocessed = b""
-
-    for chunk in b64_stream:
-        unprocessed += chunk
-        # Every 4 bytes of Base 64 encode 3 octets exactly; any more or less
-        # will potentially encode a partial octet. Therefore, we need to split
-        # on exactly 4 bytes:
-        safe_len = 4 * (len(unprocessed) // 4)
-
-        # We'll take that many off of the front of the unprocessed bytes
-        to_process, unprocessed = unprocessed[:safe_len], unprocessed[safe_len:]
-
-        # It could be we got a very small chunk, and there aren't enough bytes
-        # to process
-        if to_process:
-            yield base64.b64decode(to_process)
-
-    # Clear up any remaining and add extra padding to ensure we can decode
-    # regardless of the length. The b64 module doesn't care if there is too
-    # much padding, but it might care about too little
-    if unprocessed:
-        yield base64.b64decode(unprocessed + b"====")
-
 async def ml_call(model: ModelType, image_base64: str, task: str, temp_file: SpooledTemporaryFile[bytes]):
     # TODO:    retry
     #    # 3с повторный запрос - 10с
@@ -65,8 +39,10 @@ async def ml_call(model: ModelType, image_base64: str, task: str, temp_file: Spo
     }
 
     # For decoding chunks not suitable for decoding yet
-    image_chunk_start_key = b"predictions"
-    image_chunk_index = 16
+    buffer = b""
+
+    image_chunk_start_key = b"predictions\":\""
+    image_chunk_start_index = 16
 
     image_chunk_end_key = b"\"}"
     image_chunk_end_index = -3
@@ -74,56 +50,41 @@ async def ml_call(model: ModelType, image_base64: str, task: str, temp_file: Spo
     # For model-dependant chunking
     if model == ModelType.ai24:
         #  {"success":true,"code":200,"message":"","error":"","data":{"image":"
-        image_chunk_start_key = b"data\":{\"image"
-        image_chunk_index = 68
+        image_chunk_start_key = b"data\":{\"image\":\""
+        image_chunk_start_index = 68
 
         image_chunk_end_key = b"\"}}"
         image_chunk_end_index = -4
 
     # TODO: rm
     debug_file = open("debug_24ai.json", "wb")
-    
-    unprocessed = b""
     async with httpx.AsyncClient() as client:
         async with client.stream("POST", url=ml_url, json=req_body, headers=headers, timeout=60) as response:
             if response.is_error:
                 temp_file.close()
                 await response.aread()
                 return response.content
-            image_base64_stream = False
             async for chunk in response.aiter_bytes():
+                chunk = chunk.replace(b"\\", b"")                    
+                chunk = buffer + chunk
                 
                 # Extract  b'{"predictions":"saddsfdfd...
                 if image_chunk_start_key in chunk:
-                    image_base64_stream = True
-                    chunk = chunk[image_chunk_index:]
+                    chunk = chunk[image_chunk_start_index:]
                 if image_chunk_end_key in chunk:
-                    image_base64_stream = False
                     chunk = chunk[:image_chunk_end_index]
 
-                if image_base64_stream == False:
-                    continue
+                # Calculate how much can be cleanly decoded
+                cut_off = len(chunk) % 4
+                buffer = chunk[-cut_off:] if cut_off != 0 else b""
+                chunk_to_decode = chunk[:-cut_off] if cut_off != 0 else chunk
 
-                unprocessed += chunk
-                # Every 4 bytes of Base 64 encode 3 octets exactly; any more or less
-                # will potentially encode a partial octet. Therefore, we need to split
-                # on exactly 4 bytes:
-                safe_len = 4 * (len(unprocessed) // 4)
-                # We'll take that many off of the front of the unprocessed bytes
-                to_process, unprocessed = unprocessed[:safe_len], unprocessed[safe_len:]
-                # It could be we got a very small chunk, and there aren't enough bytes
-                # to process
-                if to_process:
-                    temp_file.write(base64.b64decode(to_process+ b"===="))
-
-    # Clear up any remaining and add extra padding to ensure we can decode
-    # regardless of the length. The b64 module doesn't care if there is too
-    # much padding, but it might care about too little
-    if unprocessed:
-        temp_file.write(base64.b64decode(unprocessed + b"===="))
+                # If enough bytes for decode is collected - do it, otherwise wait for next buffer + chunk
+                if chunk_to_decode:
+                    temp_file.write(base64.b64decode(
+                        chunk_to_decode + b'==', validate=False))
 
     debug_file.close()
-
 async def create_transformed_image(from_uuid: str, from_extension: str, to_uuid: str, task: OperationType, model: ModelType):
     # TODO: Chain with upload end, can't isolate completely from original
     # for now
