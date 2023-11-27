@@ -1,13 +1,13 @@
 openapi: 3.0.0
 info:
   title: File Processing API
-  version: 6.0.0
+  version: 7.0.0
 servers:
   - url: http://127.0.0.1:8000/api
     description: Localhost dev
   - url: http://127.0.0.1:8000/
     description: Localhost dev - no prefix
-  - url: https://f172bd63dde84e0f85d0fd46f542a62f.apig.ru-moscow-1.hc.sbercloud.ru/api
+  - url: https://c3911b36fbfb4aae9a0b9b6c06d8d15b.apicapis.ru-moscow-1.hc.sbercloud.ru/api/
     description: Sbercloud API
 paths:
   /image:
