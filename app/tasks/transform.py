@@ -1,25 +1,34 @@
 from asyncio import sleep
 from datetime import datetime
 import json
-import requests
+from uuid import UUID
 import base64
 from .upload import upload_stream_to_s3, get_image_buffer_test
 from ..models import Image
 from ..schemas import ModelType, OperationType
 from ..database import SessionLocal
 from sqlalchemy import update
-from ..config import internal_ml_url, internal_ml_workspace, ml_24ai_token, ml_24ai_url
-import time
+from ..config import ML_INTERNAL_URL, ML_WORKSPACE_ID, ML_24AI_TOKEN, ML_24AI_URL, ML_RETRY_INTERNVAL, ML_RETRY_ATTEMPTS
 from tempfile import SpooledTemporaryFile
 import httpx
 
+async def set_image_status(image_id: UUID | str, status):
+  with SessionLocal() as db:
+      db.execute(
+          update(Image)
+        .where(Image.imageId == image_id)
+        .values({"status": status})
+      )
+      db.commit()
+      db.close()
+      print("Transformed image marked with status: ", status)
 
 async def ml_call(model: ModelType, image_base64: str, task: str, temp_file: SpooledTemporaryFile[bytes]):
     # TODO:    retry
     #    # 3с повторный запрос - 10с
     #    # 10 попыток
 
-    ml_url = internal_ml_url if model == ModelType.internal else ml_24ai_url
+    ml_url = ML_INTERNAL_URL if model == ModelType.internal else ML_24AI_URL
 
     if model == ModelType.ai24:
         ml_url += 'remove-background'
@@ -33,10 +42,10 @@ async def ml_call(model: ModelType, image_base64: str, task: str, temp_file: Spo
 
     headers = {
         "content-type": "application/json",
-        "x-workspace-id": internal_ml_workspace
+        "x-workspace-id": ML_WORKSPACE_ID
     } if model == ModelType.internal else {
         "content-type": "application/json",
-        "authorization": f"Token {ml_24ai_token}"
+        "authorization": f"Token {ML_24AI_TOKEN}"
     }
 
     # For decoding chunks not suitable for decoding yet
@@ -55,7 +64,7 @@ async def ml_call(model: ModelType, image_base64: str, task: str, temp_file: Spo
         image_chunk_start_index = 68
 
         image_chunk_end_key = b"\"}}"
-        image_chunk_end_index = -4
+        image_chunk_end_index = -4  
 
     async with httpx.AsyncClient() as client:
         async with client.stream("POST", url=ml_url, json=req_body, headers=headers, timeout=60) as response:
@@ -98,43 +107,37 @@ async def create_transformed_image(from_uuid: str, from_extension: str, to_uuid:
 
     # Step 3: POST to external service
     # TODO: Add retry/backoff https://stackoverflow.com/questions/15431044/can-i-set-max-retries-for-requests-request
-    # TODO: Extract for switching endpoint/optype
 
-    # Step 5: Upload back to S3
+    # Step 4: Upload back to S3
     temp_file = SpooledTemporaryFile(max_size=1024)
     err = ""
     match model:
         case ModelType.internal:
             internal_task = 'background_remove' if task == OperationType.background_remove else 'super_resolution'
+
             err = await ml_call(model, base64_encoded, internal_task, temp_file)
+
         case ModelType.ai24:
             err = await ml_call(model, base64_encoded, task, temp_file)
 
     if temp_file.closed:
         print("Image processing error: \n", json.dumps(err.decode('utf-8')))
-        with SessionLocal() as db:
-            db.execute(
-                update(Image)
-              .where(Image.image_id == to_uuid)
-              .values({"status": "error", "uploaded_at": datetime.now(), "transformed_at": datetime.now()})
-            )
-            db.commit()
-            db.close()
-            print("Transformed image marked as error")
+        await set_image_status(to_uuid, "error")
         return
 
     temp_file.seek(0)
 
+    # Step 5: Pass file descriptor to s3
     await upload_stream_to_s3(temp_file, to_uuid, from_extension)
 
     temp_file.close()
 
-    # Step 6: Set child status
+    # Step 6: Set transform status
     with SessionLocal() as db:
         db.execute(
             update(Image)
-          .where(Image.image_id == to_uuid)
-          .values({"status": "ready", "uploaded_at": datetime.now(), "transformed_at": datetime.now()})
+          .where(Image.imageId == to_uuid)
+          .values({"status": "ready", "uploadedAt": datetime.now(), "transformedAt": datetime.now()})
         )
         db.commit()
         db.close()

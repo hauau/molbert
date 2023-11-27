@@ -6,12 +6,18 @@ SQLALCHEMY_DATABASE_URL = getenv("DATABASE_URL", "postgresql://app:123123123@loc
 DEBUG_SQL = True if getenv("DEBUG_SQL", "false").lower() == 'true' else False
 
 # Image processing
-name_service = getenv("ML_NAME_SERVICE","1700559467") 
-internal_ml_workspace = getenv("ML_WORKSPACE_ID","111111-11111-11111-11111-1111111") 
-internal_ml_url = f'https://mlspace.aicloud.sbercloud.ru/deployments/dgx2-inf-001/kfserving-{name_service}/v1/models/kfserving-{name_service}:predict'
-# 24ai token
-ml_24ai_token = getenv("ML_24AI_TOKEN","0b52cfe4-e13b-418a-9096-c4840da1f226") 
-ml_24ai_url = getenv("ML_24AI_URL","https://core.24ai.tech/api/v1/") 
+## Internal
+ML_NAME_SERVICE = getenv("ML_NAME_SERVICE","1700559467") 
+ML_WORKSPACE_ID = getenv("ML_WORKSPACE_ID","") 
+ML_INTERNAL_URL = f'https://mlspace.aicloud.sbercloud.ru/deployments/dgx2-inf-001/kfserving-{ML_NAME_SERVICE}/v1/models/kfserving-{ML_NAME_SERVICE}:predict'
+
+## 24ai token
+ML_24AI_TOKEN = getenv("ML_24AI_TOKEN","") 
+ML_24AI_URL = getenv("ML_24AI_URL","https://core.24ai.tech/api/v1/") 
+
+## ml calls retry tuning
+ML_RETRY_INTERNVAL = int(getenv("ML_RETRY_INTERNVAL","10"))
+ML_RETRY_ATTEMPTS = int(getenv("ML_RETRY_ATTEMPTS","10"))
 
 # S3 Configuration
 AWS_ACCESS_KEY_ID = getenv("AWS_ACCESS_KEY_ID", "minioadmin")

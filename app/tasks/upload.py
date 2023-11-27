@@ -55,8 +55,8 @@ async def upload_original(
     await upload_file_to_s3(file.file, filename, extension)
     db.execute(
       update(Image)
-        .where(Image.image_id == filename)
-        .values({"status": "ready", "uploaded_at": datetime.now()})
+        .where(Image.imageId == filename)
+        .values({"status": "ready", "uploadedAt": datetime.now()})
     )
     db.commit()
 

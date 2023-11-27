@@ -19,12 +19,12 @@ class ModelType(str, Enum):
     ai24 = "24ai"
 
 class Image(ImageBase):
-    image_id: UUID4
-    created_at: datetime
-    model_type: Optional[ModelType]
-    size_bytes: Optional[int]
-    mime_type: Optional[str]
-    from_image_id: Optional[UUID4]
+    imageId: UUID4
+    createdAt: datetime
+    modelType: Optional[ModelType]
+    sizeBytes: Optional[int]
+    mimeType: Optional[str]
+    fromImageId: Optional[UUID4]
 
     class Config:
         orm_mode = True

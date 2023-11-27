@@ -17,14 +17,14 @@ DEBUG_SQL=true
 ## Internal name service, used in internal ml url template
 ML_NAME_SERVICE=1700559467
 ## Internal workspace id for internal ml x-workspace-id header value
-ML_WORKSPACE_ID=111111-11111-11111-11111-1111111
+ML_WORKSPACE_ID=aaaaa-aaaaa-aaaaaa-aaaaaaaa
 
 # 24ai token
 ML_24AI_TOKEN=
 ML_24AI_URL=https://core.24ai.tech/api/v1/
 
 # ml calls retry tuning
-ML_RETRY_INTERVAL=10
+ML_RETRY_INTERNVAL=10
 ML_RETRY_ATTEMPTS=10
 
 # S3 Configuration

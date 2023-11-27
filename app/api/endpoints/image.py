@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, File, UploadFile, Form, HTTPException, BackgroundTasks, Request, Header
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from typing import List
 from ... import schemas
 from ... import models
@@ -14,9 +14,6 @@ from ...models import Image
 
 router = APIRouter()
 
-# Dependency
-
-
 def get_db():
     db = SessionLocal()
     try:
@@ -25,7 +22,7 @@ def get_db():
         db.close()
 
 
-def get_user_id(x_user_id: str = Header(None)):
+def get_userId(x_user_id: str = Header(None)):
     if x_user_id is None:
         raise HTTPException(status_code=401, detail="X-User-Id header missing")
     return x_user_id
@@ -35,7 +32,7 @@ def get_user_id(x_user_id: str = Header(None)):
 async def create_image(
     request: Request,
     background_tasks: BackgroundTasks,
-    user_id: str = Depends(get_user_id),
+    userId: str = Depends(get_userId),
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
     operationType: Optional[schemas.OperationType] = Form(None),
@@ -49,14 +46,14 @@ async def create_image(
         raise HTTPException(
             status_code=400, detail="File size exceeds limit of 12MB")
 
-    # 2. Insert new record to the Image db and get UUID image_id in return
+    # 2. Insert new record to the Image db and get UUID imageId in return
     new_image = models.Image(
         type=operationType if operationType else "original",
-        user_id=user_id,
-        created_at=datetime.now(),
-        model_type=modelType,
-        size_bytes=size,
-        mime_type=file.content_type,
+        userId=userId,
+        createdAt=datetime.now(),
+        modelType=modelType,
+        sizeBytes=size,
+        mimeType=file.content_type,
         status="processing"  # assuming initial status is 'processing'
     )
 
@@ -69,11 +66,11 @@ async def create_image(
     if operationType is not None:
         transform_image = models.Image(
             type=operationType,
-            user_id=user_id,
-            created_at=datetime.now(),
-            model_type=modelType,
-            mime_type=file.content_type,
-            from_image_id=new_image.image_id,
+            userId=userId,
+            createdAt=datetime.now(),
+            modelType=modelType,
+            mimeType=file.content_type,
+            fromImageId=new_image.imageId,
             status="processing"  # assuming initial status is 'processing'
         )
         db.add(transform_image)
@@ -83,25 +80,25 @@ async def create_image(
             "type": operationType,
             "status": "processing",
             "modelType": modelType,
-            "imageId": transform_image.image_id,
-            "createdAt": transform_image.created_at
+            "imageId": transform_image.imageId,
+            "createdAt": transform_image.createdAt
         })
 
     # 3. Start image uploading background task without blocking
     background_tasks.add_task(upload_original, file,
-                              new_image.image_id, extension, db)
+                              new_image.imageId, extension, db)
 
     # 4. Set a task for processing if required
     for child in children:
-        background_tasks.add_task(create_transformed_image, new_image.image_id,
+        background_tasks.add_task(create_transformed_image, new_image.imageId,
                                   extension, child["imageId"], operationType, modelType)
 
     return {
         "type": "original",
         "status": "processing",
         "children": children,
-        "imageId": new_image.image_id,
-        "createdAt": new_image.created_at
+        "imageId": new_image.imageId,
+        "createdAt": new_image.createdAt
     }
 
 
@@ -111,12 +108,12 @@ async def create_image(
     background_tasks: BackgroundTasks,
     imageId: UUID,
     createImage: schemas.CreateChildImage,
-    user_id: str = Depends(get_user_id),
+    userId: str = Depends(get_userId),
     db: Session = Depends(get_db),
 ):
     image = db.query(Image).filter(
-        Image.image_id == imageId,
-        Image.user_id == user_id).one()
+        Image.imageId == imageId,
+        Image.userId == userId).one_or_none()
     db.commit()
 
     size = int(request.headers.get('content-length'))
@@ -127,60 +124,62 @@ async def create_image(
 
     transform_image = models.Image(
         type=createImage.operationType,
-        user_id=user_id,
-        created_at=datetime.now(),
-        model_type=createImage.modelType,
-        mime_type=image.mime_type,
-        from_image_id=imageId,
+        userId=userId,
+        createdAt=datetime.now(),
+        modelType=createImage.modelType,
+        mimeType=image.mimeType,
+        fromImageId=imageId,
         status="processing"  # assuming initial status is 'processing'
     )
     db.add(transform_image)
     db.commit()
     db.refresh(transform_image)
-    extension = 'jpg' if image.mime_type == 'image/jpeg' else 'png'
+    extension = 'jpg' if image.mimeType == 'image/jpeg' else 'png'
 
     background_tasks.add_task(create_transformed_image, imageId,
-                              extension, transform_image.image_id, createImage.operationType, createImage.modelType)
+                              extension, transform_image.imageId, createImage.operationType, createImage.modelType)
 
     return {
         "type": createImage.operationType,
         "status": "processing",
         "modelType": createImage.modelType,
-        "imageId": transform_image.image_id,
+        "imageId": transform_image.imageId,
         "fromImageId": imageId,
-        "createdAt": transform_image.created_at
+        "createdAt": transform_image.createdAt
     }
 
 
 @router.get("/image/{imageId}/download")
-async def download_image(imageId: UUID, db: Session = Depends(get_db), user_id: str = Depends(get_user_id)):
+async def download_image(imageId: UUID, db: Session = Depends(get_db), userId: str = Depends(get_userId)):
     image = db.query(Image).filter(
-        Image.image_id == imageId,
+        Image.imageId == imageId,
         Image.status == 'ready',
-        Image.user_id == user_id).first()
+        Image.userId == userId).first()
     db.commit()
 
     if image is None:
         raise HTTPException(status_code=404, detail="Not found")
 
-    extension = 'jpg' if image.mime_type == 'image/jpeg' else 'png'
+    extension = 'jpg' if image.mimeType == 'image/jpeg' else 'png'
 
-    return get_image_content(image.image_id, extension, image.mime_type)
+    return get_image_content(image.imageId, extension, image.mimeType)
 
 
 @router.get("/image")
-async def list_images(db: Session = Depends(get_db), user_id: str = Depends(get_user_id)):
+async def list_images(db: Session = Depends(get_db), userId: str = Depends(get_userId)):
     image = db.query(models.Image).filter(
-        models.Image.user_id == user_id).all()
+        models.Image.userId == userId).all()
     return image
 
 
-@router.get("/image/{imageId}", response_model=schemas.Image)
-async def get_image_object(imageId: UUID, user_id: str = Depends(get_user_id), db: Session = Depends(get_db)):
-    # TODO: User filtering
-    image = db.query(models.Image).filter(
-        models.Image.image_id == imageId,
-        models.Image.user_id == user_id).one()
+@router.get("/image/{imageId}")
+async def get_image_object(imageId: UUID, userId: str = Depends(get_userId), db: Session = Depends(get_db)):
+    image = db.query(models.Image). \
+      filter(
+        models.Image.imageId == imageId,
+        models.Image.userId == userId). \
+      options(joinedload(Image.children)).  \
+      one_or_none()
 
     if image is None:
         raise HTTPException(status_code=404, detail="Not found")
@@ -189,10 +188,10 @@ async def get_image_object(imageId: UUID, user_id: str = Depends(get_user_id), d
 
 
 @router.get("/image/{imageId}/status")
-async def get_image_status(imageId: UUID, db: Session = Depends(get_db), user_id: str = Depends(get_user_id)):
+async def get_image_status(imageId: UUID, db: Session = Depends(get_db), userId: str = Depends(get_userId)):
     image = db.query(models.Image).filter(
-        models.Image.image_id == imageId,
-        models.Image.user_id == user_id).first()
+        models.Image.imageId == imageId,
+        models.Image.userId == userId).one_or_none()
 
     if image is None:
         raise HTTPException(status_code=404, detail="Not found")
