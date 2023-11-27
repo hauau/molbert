@@ -56,8 +56,6 @@ async def ml_call(model: ModelType, image_base64: str, task: str, temp_file: Spo
         image_chunk_end_key = b"\"}}"
         image_chunk_end_index = -4
 
-    # TODO: rm
-    debug_file = open("debug_24ai.json", "wb")
     async with httpx.AsyncClient() as client:
         async with client.stream("POST", url=ml_url, json=req_body, headers=headers, timeout=60) as response:
             if response.is_error:
@@ -84,7 +82,6 @@ async def ml_call(model: ModelType, image_base64: str, task: str, temp_file: Spo
                     temp_file.write(base64.b64decode(
                         chunk_to_decode + b'==', validate=False))
 
-    debug_file.close()
 async def create_transformed_image(from_uuid: str, from_extension: str, to_uuid: str, task: OperationType, model: ModelType):
     # TODO: Chain with upload end, can't isolate completely from original
     # for now
