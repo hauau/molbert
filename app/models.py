@@ -18,5 +18,5 @@ class Image(Base):
     fromImageId = mapped_column(UUID(as_uuid=True), ForeignKey('image.image_id'), name='from_image_id')
     status = Column(Enum('processing', 'ready', 'error', name='image_status'))
 
-    children = relationship("Image", back_populates="parent", remote_side=[fromImageId])
+    children = relationship("Image", back_populates="parent", remote_side=[fromImageId], lazy="joined")
     parent = relationship("Image", back_populates="children", remote_side=[imageId])

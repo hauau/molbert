@@ -1,6 +1,8 @@
-from fastapi import APIRouter, Depends, File, UploadFile, Form, HTTPException, BackgroundTasks, Request, Header
+from fastapi import status, APIRouter, Depends, File, UploadFile, Form, HTTPException, BackgroundTasks, Request, Header
 from sqlalchemy.orm import Session, joinedload
 from typing import List
+
+from app.api.validation.exceptions import ImageValidationException
 from ... import schemas
 from ... import models
 from ...tasks.upload import upload_original, get_image_content
@@ -43,8 +45,19 @@ async def create_image(
     size = int(request.headers.get('content-length'))
     # 1. Validate that file size is less than 12MB
     if size > 12_000_000:
-        raise HTTPException(
-            status_code=400, detail="File size exceeds limit of 12MB")
+        raise ImageValidationException(
+            name="Image too large",
+            info="File size exceeds limit of 12MB",
+            type="imageTooLarge"
+        )
+    
+    # TODO: swap logic for peeking at magic bytes
+    allowed_mime_types = ['image/jpeg', 'image/png']
+    if file.content_type not in allowed_mime_types:
+        raise ImageValidationException(
+            type="unsupportedFormat",
+            info="This image type is currently not supported"
+        )
 
     # 2. Insert new record to the Image db and get UUID imageId in return
     new_image = models.Image(
@@ -116,12 +129,6 @@ async def create_image(
         Image.userId == userId).one_or_none()
     db.commit()
 
-    size = int(request.headers.get('content-length'))
-    # 1. Validate that file size is less than 12MB
-    if size > 12_000_000:
-        raise HTTPException(
-            status_code=400, detail="File size exceeds limit of 12MB")
-
     transform_image = models.Image(
         type=createImage.operationType,
         userId=userId,
@@ -164,23 +171,22 @@ async def download_image(imageId: UUID, db: Session = Depends(get_db), userId: s
 
     return get_image_content(image.imageId, extension, image.mimeType)
 
-
 @router.get("/image")
 async def list_images(db: Session = Depends(get_db), userId: str = Depends(get_userId)):
     image = db.query(models.Image).filter(
         models.Image.userId == userId).all()
     return image
 
-
 @router.get("/image/{imageId}")
 async def get_image_object(imageId: UUID, userId: str = Depends(get_userId), db: Session = Depends(get_db)):
+    models.Image.children.property.strategy.join_depth = 5
     image = db.query(models.Image). \
       filter(
         models.Image.imageId == imageId,
         models.Image.userId == userId). \
       options(joinedload(Image.children)).  \
       one_or_none()
-
+    
     if image is None:
         raise HTTPException(status_code=404, detail="Not found")
 
