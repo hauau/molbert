@@ -115,8 +115,8 @@ async def create_image(
     db: Session = Depends(get_db),
 ):
     image = db.query(Image).filter(
-    Image.image_id == imageId,
-    Image.user_id == user_id).one()
+        Image.image_id == imageId,
+        Image.user_id == user_id).one()
     db.commit()
 
     size = int(request.headers.get('content-length'))
@@ -129,7 +129,6 @@ async def create_image(
         type=createImage.operationType,
         user_id=user_id,
         created_at=datetime.now(),
-        # TODO: add to db model
         model_type=createImage.modelType,
         mime_type=image.mime_type,
         from_image_id=imageId,
@@ -177,10 +176,11 @@ async def list_images(db: Session = Depends(get_db), user_id: str = Depends(get_
 
 
 @router.get("/image/{imageId}", response_model=schemas.Image)
-async def get_image_object(imageId: UUID, db: Session = Depends(get_db)):
+async def get_image_object(imageId: UUID, user_id: str = Depends(get_user_id), db: Session = Depends(get_db)):
     # TODO: User filtering
     image = db.query(models.Image).filter(
-        models.Image.image_id == imageId).first()
+        models.Image.image_id == imageId,
+        models.Image.user_id == user_id).one()
 
     if image is None:
         raise HTTPException(status_code=404, detail="Not found")
@@ -191,7 +191,8 @@ async def get_image_object(imageId: UUID, db: Session = Depends(get_db)):
 @router.get("/image/{imageId}/status")
 async def get_image_status(imageId: UUID, db: Session = Depends(get_db), user_id: str = Depends(get_user_id)):
     image = db.query(models.Image).filter(
-        models.Image.image_id == imageId, models.Image.user_id == user_id).first()
+        models.Image.image_id == imageId,
+        models.Image.user_id == user_id).first()
 
     if image is None:
         raise HTTPException(status_code=404, detail="Not found")

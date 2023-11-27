@@ -13,6 +13,7 @@ import time
 from tempfile import SpooledTemporaryFile
 import httpx
 
+
 async def ml_call(model: ModelType, image_base64: str, task: str, temp_file: SpooledTemporaryFile[bytes]):
     # TODO:    retry
     #    # 3с повторный запрос - 10с
@@ -63,9 +64,9 @@ async def ml_call(model: ModelType, image_base64: str, task: str, temp_file: Spo
                 await response.aread()
                 return response.content
             async for chunk in response.aiter_bytes():
-                chunk = chunk.replace(b"\\", b"")                    
+                chunk = chunk.replace(b"\\", b"")
                 chunk = buffer + chunk
-                
+
                 # Extract  b'{"predictions":"saddsfdfd...
                 if image_chunk_start_key in chunk:
                     chunk = chunk[image_chunk_start_index:]
@@ -81,6 +82,7 @@ async def ml_call(model: ModelType, image_base64: str, task: str, temp_file: Spo
                 if chunk_to_decode:
                     temp_file.write(base64.b64decode(
                         chunk_to_decode + b'==', validate=False))
+
 
 async def create_transformed_image(from_uuid: str, from_extension: str, to_uuid: str, task: OperationType, model: ModelType):
     # TODO: Chain with upload end, can't isolate completely from original
@@ -107,7 +109,7 @@ async def create_transformed_image(from_uuid: str, from_extension: str, to_uuid:
             err = await ml_call(model, base64_encoded, internal_task, temp_file)
         case ModelType.ai24:
             err = await ml_call(model, base64_encoded, task, temp_file)
-    
+
     if temp_file.closed:
         print("Image processing error: \n", json.dumps(err.decode('utf-8')))
         with SessionLocal() as db:
