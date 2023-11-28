@@ -16,7 +16,7 @@ ML_24AI_TOKEN = getenv("ML_24AI_TOKEN","")
 ML_24AI_URL = getenv("ML_24AI_URL","https://core.24ai.tech/api/v1/") 
 
 ## ml calls retry tuning
-ML_RETRY_INTERNVAL = int(getenv("ML_RETRY_INTERNVAL","10"))
+ML_RETRY_INTERVAL = int(getenv("ML_RETRY_INTERVAL","10"))
 ML_RETRY_ATTEMPTS = int(getenv("ML_RETRY_ATTEMPTS","10"))
 
 # S3 Configuration

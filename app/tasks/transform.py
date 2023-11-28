@@ -3,12 +3,14 @@ from datetime import datetime
 import json
 from uuid import UUID
 import base64
+
+from tenacity import retry, wait_fixed
 from .upload import upload_stream_to_s3, get_image_buffer_test
 from ..models import Image
 from ..schemas import ModelType, OperationType
 from ..database import SessionLocal
 from sqlalchemy import update
-from ..config import ML_INTERNAL_URL, ML_WORKSPACE_ID, ML_24AI_TOKEN, ML_24AI_URL, ML_RETRY_INTERNVAL, ML_RETRY_ATTEMPTS
+from ..config import ML_INTERNAL_URL, ML_WORKSPACE_ID, ML_24AI_TOKEN, ML_24AI_URL, ML_RETRY_INTERVAL, ML_RETRY_ATTEMPTS
 from tempfile import SpooledTemporaryFile
 import httpx
 
@@ -23,6 +25,7 @@ async def set_image_status(image_id: UUID | str, status):
       db.close()
       print("Transformed image marked with status: ", status)
 
+@retry(wait=wait_fixed(ML_RETRY_INTERVAL))
 async def ml_call(model: ModelType, image_base64: str, task: str, temp_file: SpooledTemporaryFile[bytes]):
     # TODO:    retry
     #    # 3с повторный запрос - 10с

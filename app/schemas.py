@@ -3,12 +3,10 @@ from typing import Optional
 from datetime import datetime
 from enum import Enum
 
-class ImageBase(BaseModel):
-    type: str
-    status: str
-
-class ImageCreate(ImageBase):
-    pass
+class ImageStatus(str, Enum):
+    processing = "processing"
+    ready = "ready"
+    error = "error"
 
 class OperationType(str, Enum):
     background_remove = "background_remove"
@@ -18,13 +16,22 @@ class ModelType(str, Enum):
     internal = "internal"
     ai24 = "24ai"
 
-class Image(ImageBase):
+class ImageBase(BaseModel):
     imageId: UUID4
+    type: str
+    status: ImageStatus
+    fromImageId: Optional[UUID4]
+    
+class ImageCreate(ImageBase):
+    pass
+
+class ImageStatusResponse:
+    status: ImageStatus
+
+class Image(ImageBase):
     createdAt: datetime
     modelType: Optional[ModelType]
-    sizeBytes: Optional[int]
-    mimeType: Optional[str]
-    fromImageId: Optional[UUID4]
+    children: Optional[list["Image"]]
 
     class Config:
         orm_mode = True

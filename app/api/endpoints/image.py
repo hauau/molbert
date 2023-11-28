@@ -30,7 +30,7 @@ def get_userId(x_user_id: str = Header(None)):
     return x_user_id
 
 
-@router.post("/image", response_model=dict)
+@router.post("/image")
 async def create_image(
     request: Request,
     background_tasks: BackgroundTasks,
@@ -40,7 +40,7 @@ async def create_image(
     operationType: Optional[schemas.OperationType] = Form(None),
     modelType: Optional[schemas.ModelType] = Form(
         default=schemas.ModelType.internal)
-):
+) -> schemas.Image:
     extension = 'jpg' if file.content_type == 'image/jpeg' else 'png'
     size = int(request.headers.get('content-length'))
     # 1. Validate that file size is less than 12MB
@@ -60,7 +60,7 @@ async def create_image(
         )
 
     # 2. Insert new record to the Image db and get UUID imageId in return
-    new_image = models.Image(
+    original_image = models.Image(
         type=operationType if operationType else "original",
         userId=userId,
         createdAt=datetime.now(),
@@ -70,9 +70,9 @@ async def create_image(
         status="processing"  # assuming initial status is 'processing'
     )
 
-    db.add(new_image)
+    db.add(original_image)
     db.commit()
-    db.refresh(new_image)
+    db.refresh(original_image)
 
     children: List = []
 
@@ -83,47 +83,35 @@ async def create_image(
             createdAt=datetime.now(),
             modelType=modelType,
             mimeType=file.content_type,
-            fromImageId=new_image.imageId,
+            fromImageId=original_image.imageId,
             status="processing"  # assuming initial status is 'processing'
         )
         db.add(transform_image)
         db.commit()
         db.refresh(transform_image)
-        children.append({
-            "type": operationType,
-            "status": "processing",
-            "modelType": modelType,
-            "imageId": transform_image.imageId,
-            "createdAt": transform_image.createdAt
-        })
+        children.append(transform_image)
 
     # 3. Start image uploading background task without blocking
     background_tasks.add_task(upload_original, file,
-                              new_image.imageId, extension, db)
+                              original_image.imageId, extension, db)
 
     # 4. Set a task for processing if required
     for child in children:
-        background_tasks.add_task(create_transformed_image, new_image.imageId,
-                                  extension, child["imageId"], operationType, modelType)
+        background_tasks.add_task(create_transformed_image, original_image.imageId,
+                                  extension, child.imageId, operationType, modelType)
 
-    return {
-        "type": "original",
-        "status": "processing",
-        "children": children,
-        "imageId": new_image.imageId,
-        "createdAt": new_image.createdAt
-    }
+    original_image.children = children
+    return original_image
 
 
-@router.post("/image/{imageId}/child", response_model=dict)
+@router.post("/image/{imageId}/child")
 async def create_image(
-    request: Request,
     background_tasks: BackgroundTasks,
     imageId: UUID,
     createImage: schemas.CreateChildImage,
     userId: str = Depends(get_userId),
     db: Session = Depends(get_db),
-):
+) -> models.Image:
     image = db.query(Image).filter(
         Image.imageId == imageId,
         Image.userId == userId).one_or_none()
@@ -146,14 +134,7 @@ async def create_image(
     background_tasks.add_task(create_transformed_image, imageId,
                               extension, transform_image.imageId, createImage.operationType, createImage.modelType)
 
-    return {
-        "type": createImage.operationType,
-        "status": "processing",
-        "modelType": createImage.modelType,
-        "imageId": transform_image.imageId,
-        "fromImageId": imageId,
-        "createdAt": transform_image.createdAt
-    }
+    return transform_image
 
 
 @router.get("/image/{imageId}/download")
@@ -161,7 +142,7 @@ async def download_image(imageId: UUID, db: Session = Depends(get_db), userId: s
     image = db.query(Image).filter(
         Image.imageId == imageId,
         Image.status == 'ready',
-        Image.userId == userId).first()
+        Image.userId == userId).one_or_none()
     db.commit()
 
     if image is None:
@@ -175,10 +156,11 @@ async def download_image(imageId: UUID, db: Session = Depends(get_db), userId: s
 async def list_images(db: Session = Depends(get_db), userId: str = Depends(get_userId)):
     image = db.query(models.Image).filter(
         models.Image.userId == userId).all()
+    db.commit()
     return image
 
 @router.get("/image/{imageId}")
-async def get_image_object(imageId: UUID, userId: str = Depends(get_userId), db: Session = Depends(get_db)):
+async def get_image_object(imageId: UUID, userId: str = Depends(get_userId), db: Session = Depends(get_db)) -> schemas.Image:
     models.Image.children.property.strategy.join_depth = 5
     image = db.query(models.Image). \
       filter(
@@ -186,6 +168,7 @@ async def get_image_object(imageId: UUID, userId: str = Depends(get_userId), db:
         models.Image.userId == userId). \
       options(joinedload(Image.children)).  \
       one_or_none()
+    db.commit()
     
     if image is None:
         raise HTTPException(status_code=404, detail="Not found")
@@ -194,10 +177,13 @@ async def get_image_object(imageId: UUID, userId: str = Depends(get_userId), db:
 
 
 @router.get("/image/{imageId}/status")
-async def get_image_status(imageId: UUID, db: Session = Depends(get_db), userId: str = Depends(get_userId)):
+async def get_image_status(imageId: UUID, db: Session = Depends(get_db), userId: str = Depends(get_userId)) -> schemas.ImageStatusResponse:
     image = db.query(models.Image).filter(
         models.Image.imageId == imageId,
-        models.Image.userId == userId).one_or_none()
+        models.Image.userId == userId). \
+        with_entities(models.Image.status). \
+          one_or_none()
+    db.commit()
 
     if image is None:
         raise HTTPException(status_code=404, detail="Not found")
