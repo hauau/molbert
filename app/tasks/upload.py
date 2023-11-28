@@ -2,6 +2,7 @@ import aioboto3
 from fastapi import UploadFile, Depends
 from sqlalchemy.orm import Session
 from sqlalchemy import update
+from tenacity import retry, wait_exponential_jitter
 from ..models import Image
 from datetime import datetime
 from fastapi.responses import StreamingResponse
@@ -76,6 +77,9 @@ def get_image_buffer_generator_s3(uuid: str, extension: str):
     for chunk in response['Body'].iter_chunks(chunk_size=1024):
       yield chunk
 
+@retry(
+wait=wait_exponential_jitter(multiplier=1, min=5, max=20)
+)
 def get_image_buffer_test(uuid: str, extension: str):
     # Initialize the S3 client
     object_key = f"/{IMAGE_DIR}/{uuid}.{extension}"

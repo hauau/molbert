@@ -1,10 +1,11 @@
 from asyncio import sleep
 from datetime import datetime
 import json
+import random
 from uuid import UUID
 import base64
 
-from tenacity import retry, wait_fixed
+from tenacity import before_sleep_log, retry, retry_if_result, stop_after_attempt, wait_fixed, wait_random
 from .upload import upload_stream_to_s3, get_image_buffer_test
 from ..models import Image
 from ..schemas import ModelType, OperationType
@@ -25,11 +26,12 @@ async def set_image_status(image_id: UUID | str, status):
       db.close()
       print("Transformed image marked with status: ", status)
 
-@retry(wait=wait_fixed(ML_RETRY_INTERVAL))
-async def ml_call(model: ModelType, image_base64: str, task: str, temp_file: SpooledTemporaryFile[bytes]):
-    # TODO:    retry
-    #    # 3с повторный запрос - 10с
-    #    # 10 попыток
+@retry(
+        wait=wait_fixed(ML_RETRY_INTERVAL) + wait_random(0, 2),
+        stop=stop_after_attempt(ML_RETRY_ATTEMPTS)
+        )
+async def ml_call(model: ModelType, image_base64: str, task: OperationType, temp_file: SpooledTemporaryFile[bytes]):
+    temp_file.seek(0)
 
     ml_url = ML_INTERNAL_URL if model == ModelType.internal else ML_24AI_URL
 
@@ -45,7 +47,7 @@ async def ml_call(model: ModelType, image_base64: str, task: str, temp_file: Spo
 
     headers = {
         "content-type": "application/json",
-        "x-workspace-id": ML_WORKSPACE_ID
+        "x-workspace-id": ML_WORKSPACE_ID + "dasdas"
     } if model == ModelType.internal else {
         "content-type": "application/json",
         "authorization": f"Token {ML_24AI_TOKEN}"
@@ -72,9 +74,10 @@ async def ml_call(model: ModelType, image_base64: str, task: str, temp_file: Spo
     async with httpx.AsyncClient() as client:
         async with client.stream("POST", url=ml_url, json=req_body, headers=headers, timeout=60) as response:
             if response.is_error:
-                temp_file.close()
-                await response.aread()
-                return response.content
+                await response.read()
+                await response.close()       
+                raise BaseException(response.content)
+
             async for chunk in response.aiter_bytes():
                 chunk = chunk.replace(b"\\", b"")
                 chunk = buffer + chunk
@@ -114,17 +117,14 @@ async def create_transformed_image(from_uuid: str, from_extension: str, to_uuid:
     # Step 4: Upload back to S3
     temp_file = SpooledTemporaryFile(max_size=1024)
     err = ""
-    match model:
-        case ModelType.internal:
-            internal_task = 'background_remove' if task == OperationType.background_remove else 'super_resolution'
 
-            err = await ml_call(model, base64_encoded, internal_task, temp_file)
-
-        case ModelType.ai24:
-            err = await ml_call(model, base64_encoded, task, temp_file)
+    try:
+      await ml_call(model, base64_encoded, task, temp_file)
+    except:
+      temp_file.close()
 
     if temp_file.closed:
-        print("Image processing error: \n", json.dumps(err.decode('utf-8')))
+        print("Image processing error: \n", err)
         await set_image_status(to_uuid, "error")
         return
 
