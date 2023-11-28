@@ -61,7 +61,7 @@ async def create_image(
 
     # 2. Insert new record to the Image db and get UUID imageId in return
     original_image = models.Image(
-        type=operationType if operationType else "original",
+        type="original",
         userId=userId,
         createdAt=datetime.now(),
         modelType=modelType,
@@ -152,14 +152,14 @@ async def download_image(imageId: UUID, db: Session = Depends(get_db), userId: s
 
     return get_image_content(image.imageId, extension, image.mimeType)
 
-@router.get("/image")
+@router.get("/image", response_model=list[schemas.Image])
 async def list_images(db: Session = Depends(get_db), userId: str = Depends(get_userId)):
     image = db.query(models.Image).filter(
         models.Image.userId == userId).all()
     db.commit()
     return image
 
-@router.get("/image/{imageId}")
+@router.get("/image/{imageId}", response_model=schemas.Image)
 async def get_image_object(imageId: UUID, userId: str = Depends(get_userId), db: Session = Depends(get_db)) -> schemas.Image:
     models.Image.children.property.strategy.join_depth = 5
     image = db.query(models.Image). \
