@@ -47,7 +47,7 @@ async def ml_call(model: ModelType, image_base64: str, task: OperationType, temp
 
     headers = {
         "content-type": "application/json",
-        "x-workspace-id": ML_WORKSPACE_ID + "dasdas"
+        "x-workspace-id": ML_WORKSPACE_ID
     } if model == ModelType.internal else {
         "content-type": "application/json",
         "authorization": f"Token {ML_24AI_TOKEN}"
