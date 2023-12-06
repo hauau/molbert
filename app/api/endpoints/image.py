@@ -1,4 +1,4 @@
-from fastapi import status, APIRouter, Depends, File, UploadFile, Form, HTTPException, BackgroundTasks, Request, Header
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Request, Header
 from sqlalchemy.orm import Session, joinedload
 from typing import List
 
@@ -8,11 +8,10 @@ from ... import models
 from ...tasks.upload import upload_original, get_image_content
 from ...tasks.transform import create_transformed_image
 from ...database import SessionLocal
-from typing import Optional
 from datetime import datetime
-from fastapi import UploadFile
 from uuid import UUID
 from ...models import Image
+import base64
 
 router = APIRouter()
 
@@ -34,29 +33,32 @@ def get_userId(x_user_id: str = Header(None)):
 async def create_image(
     request: Request,
     background_tasks: BackgroundTasks,
+    body: schemas.CreateImage,
     userId: str = Depends(get_userId),
-    file: UploadFile = File(...),
-    db: Session = Depends(get_db),
-    operationType: Optional[schemas.OperationType] = Form(None),
-    modelType: Optional[schemas.ModelType] = Form(
-        default=schemas.ModelType.internal)
+    db: Session = Depends(get_db)
 ) -> schemas.Image:
-    extension = 'jpg' if file.content_type == 'image/jpeg' else 'png'
-    size = int(request.headers.get('content-length'))
+    file_bytes = base64.b64decode(body.image)
+    file_type = 'Unknown'
+    file_size = len(file_bytes)
+
+    if file_bytes.startswith(b'\xff\xd8'):
+        file_type = 'image/jpeg'
+    elif file_bytes.startswith(b'\x89PNG\r\n\x1a\n'):
+        file_type = 'image/png'
+    else:
+        raise ImageValidationException(
+            type="unsupportedFormat",
+            info="This image type is currently not supported"
+        )
+    
+    extension = file_type.split('/')[1]
+
     # 1. Validate that file size is less than 12MB
-    if size > 12_000_000:
+    if file_size > 12_000_000:
         raise ImageValidationException(
             name="Image too large",
             info="File size exceeds limit of 12MB",
             type="imageTooLarge"
-        )
-    
-    # TODO: swap logic for peeking at magic bytes
-    allowed_mime_types = ['image/jpeg', 'image/png']
-    if file.content_type not in allowed_mime_types:
-        raise ImageValidationException(
-            type="unsupportedFormat",
-            info="This image type is currently not supported"
         )
 
     # 2. Insert new record to the Image db and get UUID imageId in return
@@ -64,9 +66,9 @@ async def create_image(
         type="original",
         userId=userId,
         createdAt=datetime.now(),
-        modelType=modelType,
-        sizeBytes=size,
-        mimeType=file.content_type,
+        modelType=body.modelType,
+        sizeBytes=file_size,
+        mimeType=file_type,
         status="processing"  # assuming initial status is 'processing'
     )
 
@@ -76,13 +78,13 @@ async def create_image(
 
     children: List = []
 
-    if operationType is not None:
+    if body.operationType is not None:
         transform_image = models.Image(
-            type=operationType,
+            type=body.operationType,
             userId=userId,
             createdAt=datetime.now(),
-            modelType=modelType,
-            mimeType=file.content_type,
+            modelType=body.modelType,
+            mimeType=file_type,
             fromImageId=original_image.imageId,
             status="processing"  # assuming initial status is 'processing'
         )
@@ -92,13 +94,13 @@ async def create_image(
         children.append(transform_image)
 
     # 3. Start image uploading background task without blocking
-    background_tasks.add_task(upload_original, file,
+    background_tasks.add_task(upload_original, file_bytes,
                               original_image.imageId, extension, db)
 
     # 4. Set a task for processing if required
     for child in children:
         background_tasks.add_task(create_transformed_image, original_image.imageId,
-                                  extension, child.imageId, operationType, modelType)
+                                  extension, child.imageId, body.operationType, body.modelType)
 
     original_image.children = children
     return original_image
@@ -129,7 +131,7 @@ async def create_image(
     db.add(transform_image)
     db.commit()
     db.refresh(transform_image)
-    extension = 'jpg' if image.mimeType == 'image/jpeg' else 'png'
+    extension = 'jpeg' if image.mimeType == 'image/jpeg' else 'png'
 
     background_tasks.add_task(create_transformed_image, imageId,
                               extension, transform_image.imageId, createImage.operationType, createImage.modelType)
@@ -148,7 +150,7 @@ async def download_image(imageId: UUID, db: Session = Depends(get_db), userId: s
     if image is None:
         raise HTTPException(status_code=404, detail="Not found")
 
-    extension = 'jpg' if image.mimeType == 'image/jpeg' else 'png'
+    extension = 'jpeg' if image.mimeType == 'image/jpeg' else 'png'
 
     return get_image_content(image.imageId, extension, image.mimeType)
 

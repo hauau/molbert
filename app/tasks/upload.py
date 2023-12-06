@@ -1,14 +1,14 @@
 import aioboto3
-from fastapi import UploadFile, Depends
 from sqlalchemy.orm import Session
 from sqlalchemy import update
-from tenacity import retry, wait_exponential_jitter, wait_random_exponential
+from tenacity import retry, wait_random_exponential
 from ..models import Image
 from datetime import datetime
 from fastapi.responses import StreamingResponse
 import boto3
 from ..config import AWS_ACCESS_KEY_ID, AWS_REGION, AWS_SECRET_ACCESS_KEY, S3_BUCKET, S3_ENDPOINT_URL, IMAGE_DIR
 from smart_open import open
+import io
 
 session = aioboto3.Session(
     aws_access_key_id=AWS_ACCESS_KEY_ID,
@@ -29,31 +29,25 @@ async def upload_stream_to_s3(stream_generator, filename: str, extension: str):
             fout.write(chunk)
         print(f"Finished Uploading {blob_s3_key} to s3")
 
-async def upload_file_to_s3(
-    file,
-    filename: str,
-    extension: str
-) -> str:
-    blob_s3_key = f"/{IMAGE_DIR}/{filename}.{extension}"
-
-    async with session.client("s3", endpoint_url=S3_ENDPOINT_URL) as s3:
-        try:
-            print(f"Uploading {blob_s3_key} to s3")
-            await s3.upload_fileobj(file, S3_BUCKET, blob_s3_key)
-            print(f"Finished Uploading {blob_s3_key} to s3")
-        except Exception as e:
-            print(f"Unable to s3 upload to {blob_s3_key}: {e} ({type(e)})")
-            return ""
-
-    return f"s3://{blob_s3_key}"
-
 async def upload_original(
-    file: UploadFile,
+    file: bytes,
     filename: str,
     extension: str,
     db: Session
 ) -> str:
-    await upload_file_to_s3(file.file, filename, extension)
+    blob_s3_key = f"/{IMAGE_DIR}/{filename}.{extension}"
+
+    file_like_object = io.BytesIO(file)
+
+    async with session.client("s3", endpoint_url=S3_ENDPOINT_URL) as s3:
+        try:
+            print(f"Uploading {blob_s3_key} to s3")
+            await s3.upload_fileobj(file_like_object, S3_BUCKET, blob_s3_key)
+            print(f"Finished Uploading {blob_s3_key} to s3")
+        except Exception as e:
+            print(f"Unable to s3 upload to {blob_s3_key}: {e} ({type(e)})")
+            return ""
+        
     db.execute(
       update(Image)
         .where(Image.imageId == filename)

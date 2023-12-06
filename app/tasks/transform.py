@@ -1,19 +1,21 @@
 from asyncio import sleep
 from datetime import datetime
-import json
-import random
+from ssl import SSLCertVerificationError
 from uuid import UUID
 import base64
 
-from tenacity import before_sleep_log, retry, retry_if_result, stop_after_attempt, wait_fixed, wait_random
+from tenacity import before_sleep_log, retry, stop_after_attempt, wait_fixed, wait_random
 from .upload import upload_stream_to_s3, get_image_buffer_test
 from ..models import Image
 from ..schemas import ModelType, OperationType
 from ..database import SessionLocal
 from sqlalchemy import update
-from ..config import ML_INTERNAL_URL, ML_WORKSPACE_ID, ML_24AI_TOKEN, ML_24AI_URL, ML_RETRY_INTERVAL, ML_RETRY_ATTEMPTS
+from ..config import ML_SSL_VERIFY, ML_INTERNAL_URL, ML_WORKSPACE_ID, ML_24AI_TOKEN, ML_24AI_URL, ML_RETRY_INTERVAL, ML_RETRY_ATTEMPTS
 from tempfile import SpooledTemporaryFile
 import httpx
+import logging
+
+logger = logging.getLogger(__name__)
 
 async def set_image_status(image_id: UUID | str, status):
   with SessionLocal() as db:
@@ -28,7 +30,8 @@ async def set_image_status(image_id: UUID | str, status):
 
 @retry(
         wait=wait_fixed(ML_RETRY_INTERVAL) + wait_random(0, 2),
-        stop=stop_after_attempt(ML_RETRY_ATTEMPTS)
+        stop=stop_after_attempt(ML_RETRY_ATTEMPTS),
+        before_sleep=before_sleep_log(logger, logging.ERROR)
         )
 async def ml_call(model: ModelType, image_base64: str, task: OperationType, temp_file: SpooledTemporaryFile[bytes]):
     temp_file.seek(0)
@@ -71,11 +74,10 @@ async def ml_call(model: ModelType, image_base64: str, task: OperationType, temp
         image_chunk_end_key = b"\"}}"
         image_chunk_end_index = -4  
 
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient(verify=ML_SSL_VERIFY) as client:
         async with client.stream("POST", url=ml_url, json=req_body, headers=headers, timeout=60) as response:
             if response.is_error:
-                await response.read()
-                await response.close()       
+                await response.aread()
                 raise BaseException(response.content)
 
             async for chunk in response.aiter_bytes():
@@ -120,13 +122,16 @@ async def create_transformed_image(from_uuid: str, from_extension: str, to_uuid:
 
     try:
       await ml_call(model, base64_encoded, task, temp_file)
-    except:
+    except (Exception, SSLCertVerificationError) as err:
+      print(f"ML Call error: {model}/{task}/{from_uuid} err: {err.reason} {err.args[0]}") 
       temp_file.close()
-
-    if temp_file.closed:
-        print("Image processing error: \n", err)
-        await set_image_status(to_uuid, "error")
-        return
+      await set_image_status(to_uuid, "error")
+      return
+    except (BaseException) as err:
+      print(f"ML Call error: {model}/{task}/{from_uuid} err: {err.args[0]}") 
+      temp_file.close()
+      await set_image_status(to_uuid, "error")
+      return
 
     temp_file.seek(0)
 

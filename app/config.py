@@ -6,8 +6,10 @@ SQLALCHEMY_DATABASE_URL = getenv("DATABASE_URL", "postgresql://app:123123123@loc
 DEBUG_SQL = True if getenv("DEBUG_SQL", "false").lower() == 'true' else False
 
 # Image processing
+## Verify SSL
+ML_SSL_VERIFY = True if getenv("ML_SSL_VERIFY", "true").lower() == 'true' else False
 ## Internal
-ML_NAME_SERVICE = getenv("ML_NAME_SERVICE","1700559467") 
+ML_NAME_SERVICE = getenv("ML_NAME_SERVICE","") 
 ML_WORKSPACE_ID = getenv("ML_WORKSPACE_ID","") 
 
 ML_INTERNAL_URL = f'https://k1-nb.ai.cloud.ru/deployments/dgx2-inf-001/kfserving-{ML_NAME_SERVICE}/v1/models/kfserving-{ML_NAME_SERVICE}:predict'
