@@ -9,7 +9,8 @@ DEBUG_SQL = True if getenv("DEBUG_SQL", "false").lower() == 'true' else False
 ## Internal
 ML_NAME_SERVICE = getenv("ML_NAME_SERVICE","1700559467") 
 ML_WORKSPACE_ID = getenv("ML_WORKSPACE_ID","") 
-ML_INTERNAL_URL = f'https://mlspace.aicloud.sbercloud.ru/deployments/dgx2-inf-001/kfserving-{ML_NAME_SERVICE}/v1/models/kfserving-{ML_NAME_SERVICE}:predict'
+
+ML_INTERNAL_URL = f'https://k1-nb.ai.cloud.ru/deployments/dgx2-inf-001/kfserving-{ML_NAME_SERVICE}/v1/models/kfserving-{ML_NAME_SERVICE}:predict'
 
 ## 24ai token
 ML_24AI_TOKEN = getenv("ML_24AI_TOKEN","") 
