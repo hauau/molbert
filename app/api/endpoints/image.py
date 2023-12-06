@@ -31,7 +31,6 @@ def get_userId(x_user_id: str = Header(None)):
 
 @router.post("/image")
 async def create_image(
-    request: Request,
     background_tasks: BackgroundTasks,
     body: schemas.CreateImage,
     userId: str = Depends(get_userId),

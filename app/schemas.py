@@ -42,6 +42,6 @@ class CreateChildImage(BaseModel):
 
 
 class CreateImage(BaseModel):
-    operationType: OperationType
+    operationType: Optional[OperationType]
     modelType: Optional[ModelType] = ModelType.internal
     image: str

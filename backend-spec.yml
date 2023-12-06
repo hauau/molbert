@@ -1,7 +1,7 @@
 openapi: 3.0.0
 info:
   title: File Processing API
-  version: 7.0.0
+  version: 8.0.0
 servers:
   - url: http://127.0.0.1:8000/api
     description: Localhost dev
@@ -16,18 +16,21 @@ paths:
       description: If operationType is provided, then child image is created automatically and child id returned as per schema.
       requestBody:
         content:
-          multipart/form-data:
+          application/json:
             schema:
               type: object
-              required: [ "file" ]
+              required:
+                - "image"
               properties:
-                file:
-                  type: string
-                  format: binary
                 operationType:
-                  $ref: '#/components/schemas/operationType'
+                  type: string
+                  enum: [ "background_remove", "super_resolution" ]
                 modelType:
-                  $ref: '#/components/schemas/modelType'
+                  $ref: "#/components/schemas/modelType"
+                image:
+                  type: string
+                  format: byte
+                  description: "base64 encoded image"
       responses:
         '201':
           description: Created
