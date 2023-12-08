@@ -1,11 +1,11 @@
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Request, Header
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Header, Response
 from sqlalchemy.orm import Session, joinedload
 from typing import List
 
 from app.api.validation.exceptions import ImageValidationException
 from ... import schemas
 from ... import models
-from ...tasks.upload import upload_original, get_image_content
+from ...tasks.upload import get_image_buffer_test, upload_original
 from ...tasks.transform import create_transformed_image
 from ...database import SessionLocal
 from datetime import datetime
@@ -139,7 +139,11 @@ async def create_image(
 
 
 @router.get("/image/{imageId}/download")
-async def download_image(imageId: UUID, db: Session = Depends(get_db), userId: str = Depends(get_userId)):
+async def download_image(
+    imageId: UUID,
+    response: Response,
+    db: Session = Depends(get_db),
+    userId: str = Depends(get_userId)):
     image = db.query(Image).filter(
         Image.imageId == imageId,
         Image.status == 'ready',
@@ -151,7 +155,12 @@ async def download_image(imageId: UUID, db: Session = Depends(get_db), userId: s
 
     extension = 'jpeg' if image.mimeType == 'image/jpeg' else 'png'
 
-    return get_image_content(image.imageId, extension, image.mimeType)
+    image_b64 = base64.b64encode(get_image_buffer_test(image.imageId, extension).read())
+
+    return {
+      "mimeType":image.mimeType,
+      "image":image_b64,      
+      }
 
 @router.get("/image", response_model=list[schemas.Image])
 async def list_images(db: Session = Depends(get_db), userId: str = Depends(get_userId)):

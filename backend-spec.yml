@@ -94,8 +94,16 @@ paths:
         '200':
           description: OK
           content:
-            image/jpeg: {}
-            image/png: {}
+            application/json:
+              schema:
+                type: object
+                properties:
+                  mimeType:
+                    type: string
+                  image:
+                    type: string
+                    format: byte
+                    description: "base64 encoded image"
         '404':
           description: Not Found
         '401':
