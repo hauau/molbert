@@ -29,3 +29,7 @@ AWS_REGION = getenv("AWS_REGION", 'us-east-1')
 S3_BUCKET = getenv("S3_BUCKET", 'molbert')
 S3_ENDPOINT_URL = getenv("S3_ENDPOINT_URL", "http://127.0.0.1:9000")
 IMAGE_DIR = getenv("IMAGE_DIR", 'images')
+
+# App settings
+## Upload size limit, ~12mb by default
+UPLOAD_SIZE_LIMIT_BYTES = int(getenv("UPLOAD_SIZE_LIMIT_BYTES","12000000"))

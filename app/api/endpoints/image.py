@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session, joinedload
 from typing import List
 
 from app.api.validation.exceptions import ImageValidationException
+from app.config import UPLOAD_SIZE_LIMIT_BYTES
 from ... import schemas
 from ... import models
 from ...tasks.upload import get_image_buffer_test, upload_original
@@ -53,7 +54,7 @@ async def create_image(
     extension = file_type.split('/')[1]
 
     # 1. Validate that file size is less than 12MB
-    if file_size > 12_000_000:
+    if file_size > UPLOAD_SIZE_LIMIT_BYTES:
         raise ImageValidationException(
             name="Image too large",
             info="File size exceeds limit of 12MB",
